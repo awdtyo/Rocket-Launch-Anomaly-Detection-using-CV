@@ -4,10 +4,12 @@
 Queries:
   - SpaceX: https://api.spacexdata.com/v5/launches/past — mission name,
     success flag, links.webcast YouTube URL (skips entries without one).
-  - Launch Library 2: https://ll.thespacedevs.com/2.2.0/launch/previous/ —
-    paginated, filtered to ISRO/NASA launch providers, pulls mission name,
-    status (Launch Successful / Launch Failure / Partial Failure), and the
-    first video_urls entry.
+  - Launch Library 2: https://ll.thespacedevs.com/2.3.0/launches/ —
+    queried with lsp__name__icontains filters for ISRO/NASA providers
+    (server-side filtering keeps this to a handful of pages, staying well
+    under LL2's 15-calls-per-hour free tier), pulls mission name, status
+    (Launch Successful / Launch Failure / Partial Failure), and vid_urls
+    webcasts from the launch or its mission.
 
 YouTube IDs are extracted from youtube.com/watch?v= / youtu.be/ URLs (plus
 embed/live/shorts forms). Entries are auto-classified: success -> normal,
@@ -23,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import re
 import sys
 import time
@@ -32,8 +35,9 @@ import requests
 import yaml
 
 SPACEX_URL = "https://api.spacexdata.com/v5/launches/past"
-LL2_URL = "https://ll.thespacedevs.com/2.2.0/launch/previous/"
+LL2_URL = "https://ll.thespacedevs.com/2.3.0/launches/"
 LL2_LIMIT = 100
+LL2_PROVIDER_QUERIES = ("isro", "nasa")
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUT = ROOT / "configs" / "videos_generated.yaml"
@@ -80,11 +84,12 @@ def _cached_get_json(url: str, cache_key: str, cache_dir: Path,
             with open(cache_file, "w") as f:
                 json.dump(data, f)
             if rate:
-                time.sleep(rate)
+                time.sleep(rate + random.uniform(0.5, 1.5))  # jittered
             return data
         except requests.RequestException as exc:
             last_exc = exc
-            wait = 5 * (2 ** attempt)
+            is_429 = isinstance(exc, requests.HTTPError) and "429" in str(exc)
+            wait = 30 * (attempt + 1) if is_429 else 5 * (2 ** attempt)
             print(f"  retry {attempt + 1}/{retries} for {url} in {wait}s ({exc})",
                   file=sys.stderr)
             time.sleep(wait)
@@ -118,10 +123,13 @@ def fetch_spacex_launches(cache_dir: Path, use_cache: bool = True,
 
 
 def ll2_video_url(launch: dict) -> str | None:
-    for vu in (launch.get("video_urls") or []):
-        if isinstance(vu, dict) and vu.get("url"):
-            return vu["url"]
-    return launch.get("vid_url")
+    """Return the first YouTube webcast URL from launch- or mission-level vid_urls."""
+    for group in (launch.get("vid_urls"), (launch.get("mission") or {}).get("vid_urls")):
+        for vu in group or []:
+            url = vu.get("url") if isinstance(vu, dict) else vu
+            if url and extract_youtube_id(url):
+                return url
+    return None
 
 
 def ll2_outcome(status_name: str | None) -> str | None:
@@ -133,17 +141,25 @@ def ll2_outcome(status_name: str | None) -> str | None:
     return None
 
 
-def fetch_ll2_launches(cache_dir: Path, max_pages: int = 100, rate: float = 4.0,
+def fetch_ll2_launches(cache_dir: Path, queries: tuple[str, ...] = LL2_PROVIDER_QUERIES,
+                       max_pages: int = 20, rate: float = 4.0,
                        use_cache: bool = True) -> list[dict]:
-    """Fetch paginated Launch Library 2 previous-launch history."""
-    url = f"{LL2_URL}?limit={LL2_LIMIT}"
-    out, page = [], 0
-    while url and page < max_pages:
-        data = _cached_get_json(url, f"ll2_previous_{page}.json", cache_dir,
-                                use_cache=use_cache, rate=rate)
-        out.extend(data.get("results") or [])
-        url = data.get("next")
-        page += 1
+    """Fetch LL2 2.3.0 launches, paginated per ISRO/NASA provider query.
+
+    Provider filtering is done server-side (lsp__name__icontains) so the whole
+    relevant history fits in a handful of pages — no need to paginate every
+    launch ever attempted (which would blow past LL2's 15-calls/hour limit).
+    """
+    out = []
+    for q in queries:
+        url = f"{LL2_URL}?limit={LL2_LIMIT}&lsp__name__icontains={q}"
+        page = 0
+        while url and page < max_pages:
+            data = _cached_get_json(url, f"ll2_{q}_{page}.json", cache_dir,
+                                    use_cache=use_cache, rate=rate)
+            out.extend(data.get("results") or [])
+            url = data.get("next")
+            page += 1
     return out
 
 
@@ -242,8 +258,8 @@ def main(argv: list[str] | None = None) -> int:
                          "Use --out configs/videos.yaml to merge for real.")
     ap.add_argument("--cache-dir", default=str(DEFAULT_CACHE),
                     help="raw API response cache (default: %(default)s)")
-    ap.add_argument("--pages", type=int, default=100,
-                    help="max LL2 pages to fetch, 100 launches each "
+    ap.add_argument("--pages", type=int, default=20,
+                    help="max LL2 pages per provider query, 100 launches each "
                          "(default: %(default)s)")
     ap.add_argument("--rate", type=float, default=4.0,
                     help="seconds between uncached LL2 requests "

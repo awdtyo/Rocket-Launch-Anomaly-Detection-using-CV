@@ -1,0 +1,19 @@
+# Manually verified historical cases the launch APIs don't cover well (no
+# webcast link in the API, removed YouTube videos, or footage only on
+# unofficial channels). Same format as videos.yaml — confirm each video_id
+# yourself before filling it in. download.py picks these up alongside the
+# generated config once you merge them into configs/videos.yaml.
+normal: []
+anomaly:
+  # Space Shuttle Challenger (STS-51-L), 1986 — lost ~T+73s
+  # - mission: sts-51-l-challenger
+  #   source: nasa
+  #   video_id: YOUR_VERIFIED_ID
+  # Antares Orb-3, 2014 — pad abort ~T+6s
+  # - mission: antares-orb-3
+  #   source: nasa
+  #   video_id: YOUR_VERIFIED_ID
+  # ISRO GSLV MkII F02, 2010 — launch failure
+  # - mission: gslv-mk2-f02
+  #   source: isro
+  #   video_id: YOUR_VERIFIED_ID

@@ -5,3 +5,6 @@ venv/
 
 # large media downloads — keep out of git
 data/raw/*.mp4
+
+# regenerable raw API responses
+data/api_cache/

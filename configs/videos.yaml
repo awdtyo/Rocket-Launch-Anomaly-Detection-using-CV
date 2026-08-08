@@ -1,0 +1,14 @@
+# Placeholder entries — replace video_id with real YouTube IDs before running
+# scripts/download.py. Groups: normal = nominal ascents (training data),
+# anomaly = known failure footage (inference/eval only).
+normal:
+  - mission: starlink-9-2
+    source: spacex
+    video_id: PLACEHOLDER_VIDEO_ID_1
+  - mission: chandrayaan-3
+    source: isro
+    video_id: PLACEHOLDER_VIDEO_ID_2
+anomaly:
+  - mission: crs-7
+    source: spacex
+    video_id: PLACEHOLDER_VIDEO_ID_3

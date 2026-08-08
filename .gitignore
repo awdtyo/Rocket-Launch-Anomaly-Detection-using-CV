@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# large media downloads — keep out of git
+data/raw/*.mp4

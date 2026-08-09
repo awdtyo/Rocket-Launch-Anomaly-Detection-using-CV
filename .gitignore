@@ -8,3 +8,6 @@ data/raw/*.mp4
 
 # regenerable raw API responses
 data/api_cache/
+data/raw/
+data/frames/
+data/api_cache/

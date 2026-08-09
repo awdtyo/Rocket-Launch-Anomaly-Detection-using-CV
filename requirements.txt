@@ -1,3 +1,7 @@
 yt-dlp
 pyyaml
 requests
+scenedetect
+opencv-python
+numpy
+matplotlib

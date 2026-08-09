@@ -8,6 +8,48 @@ normal:
   - mission: chandrayaan-3
     source: isro
     video_id: PLACEHOLDER_VIDEO_ID_2
+  - mission: sda-tranche-0-2
+    source: spacex
+    video_id: JBeJVN-0t2I
+  - mission: starlink-20230901
+    source: spacex
+    video_id: iFY7mtzsNKo
+  - mission: starlink-20230822
+    source: spacex
+    video_id: agYuEAkEljw
+  - mission: starlink-20230827
+    source: spacex
+    video_id: SEClIbWr3m0
+  - mission: starlink-20230808
+    source: spacex
+    video_id: alkJWrqffcw
+  - mission: starlink-20230707
+    source: spacex
+    video_id: UdfKyxdSJBk
+  - mission: starlink-20230622
+    source: spacex
+    video_id: 98JQV1czLsA
+  - mission: starlink-20230612
+    source: spacex
+    video_id: emZ-oROYq8s
+  - mission: starlink-20230531
+    source: spacex
+    video_id: EfJxpU0CLNI
+  - mission: starlink-20230519
+    source: spacex
+    video_id: VzEfuP95Z90
+  - mission: starlink-20230419
+    source: spacex
+    video_id: kpoMcjTvylk
+  - mission: starlink-20230324
+    source: spacex
+    video_id: Bhe91f5smxM
+  - mission: starlink-20230303
+    source: spacex
+    video_id: BAkApUbevaA
+  - mission: starlink-20230212
+    source: spacex
+    video_id: Xh9gWCv2sXU
 anomaly:
   - mission: crs-7
     source: spacex

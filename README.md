@@ -1,178 +1,60 @@
 # Rocket Launch Anomaly Detection
 
-Unsupervised video anomaly detection on rocket ascent footage.
+Unsupervised video anomaly detection for rocket ascent footage. The system is trained only on normal launch webcasts to learn what a typical ascent looks like, then scores unseen footage by how much it deviates from that learned normal. This is a research/portfolio MVP, not a production system: it demonstrably flags at least one known historical failure cleanly, and it has documented blind spots.
 
-**Core idea:** train only on *normal* launch footage so a temporal model learns what a
-typical ascent looks like (plume shape, color, debris pattern, vehicle silhouette), then
-score new footage by how much it deviates from that learned normal. There is no labeled
-failure dataset, so nothing assumes balanced classes or failure examples for training.
+## The core idea
+
+No labeled failure dataset exists at scale, and no two failures look alike. So instead of training a classifier to recognize anomaly types, a temporal autoencoder is trained only on *normal* ascent footage: it learns the recurring structure of plume shape, color, debris pattern, and vehicle silhouette. At inference, a frame whose reconstruction error is far above what the model produces for normal video is flagged as anomalous. The model is never shown a failure during training, and nothing in the design assumes balanced classes or failure examples.
 
 ## Pipeline
 
-```
-configs/videos.yaml ──► scripts/download.py ──► data/raw/{normal,anomaly}/
-    │                                                │
-    └─ scripts/add_video.py (hand-picked entries)    ▼
-                                          scripts/extract_frames.py
-                                                    │
-                                                    ▼
-                          data/frames/{video}/frame_*.jpg + manifest.json
-                                                    │
-                                          scripts/roi_track.py
-                                                    │
-                                                    ▼
-                             data/frames/{video}/roi/ + roi_boxes.json
-                                                    │
-                                          scripts/features.py        (pending)
-                                                    │
-                                                    ▼
-                                  data/features/*.npz feature vectors
-                                                    │
-                                                    ▼
-                          notebooks/train_temporal_model.ipynb        (pending)
-                              (ConvLSTM / temporal autoencoder, normal-only)
-                                                    │
-                                                    ▼
-                                   scripts/score_and_overlay.py       (pending)
-                                  (anomaly score per frame + overlay video)
-```
+1. **Download** — `scripts/download.py` reads `configs/videos.yaml` and pulls launch webcasts with yt-dlp into `data/raw/{normal,anomaly}/`. `scripts/fetch_launch_list.py` and `scripts/add_video.py` help build the video list.
+2. **Frame extraction & shot filtering** — `scripts/extract_frames.py` detects shot/cut boundaries with PySceneDetect, drops shots shorter than 2 s (countdown graphics, rapid cuts), samples the remaining ascent footage at 2 fps, and tags each video's lighting condition (day/dusk/night) so baselines can be trained per lighting.
+3. **ROI tracking** — `scripts/roi_track.py` detects the rocket + exhaust plume each frame with a brightness-primary heuristic (Otsu threshold, motion-mask boost, EMA box smoothing) and crops to the ROI with margin. Frames with no confident blob fall back to a full-frame crop and are logged in `roi_boxes.json["fallback_frames"]`.
+4. **Feature extraction** — `scripts/features.py` reduces each ROI crop to a 33-dim vector: plume shape statistics, HSV color histogram, edge/debris density, and optical-flow magnitude. Features are KB-scale per frame and cached to disk.
+5. **Temporal model** — `notebooks/train_temporal_model.ipynb` trains a GRU autoencoder (window 16, stride 4, latent 32) on feature sequences from normal launches only, minimizing reconstruction MSE.
+6. **Scoring & overlay** — `scripts/score_video.py` runs the trained model over a feature sequence and outputs a per-frame reconstruction error (mean MSE over all windows covering each frame). `scripts/score_and_overlay.py` renders an annotated video with a live error chart and a banner that triggers when the score crosses `multiplier × video p95` (default 3×).
 
-| Stage | Script | Status |
-|-------|--------|--------|
-| 1. Download | `scripts/download.py` + `scripts/fetch_launch_list.py` + `scripts/add_video.py` | Done |
-| 2. Frame extraction | `scripts/extract_frames.py` | Done |
-| 3. ROI tracking | `scripts/roi_track.py` | Done |
-| 4. Features | `scripts/features.py` | Pending |
-| 5. Temporal model | `notebooks/train_temporal_model.ipynb` | Pending |
-| 6. Scoring/overlay | `scripts/score_and_overlay.py` | Pending |
+## Results
 
-## Current dataset
+All three historical anomaly videos were held out of training; the model was trained on the 13 normal launches only.
 
-- **13 normal videos** (`data/raw/normal/`, all SpaceX webcasts, Feb–Sep 2023), listed in `configs/videos.yaml`.
-- **0 anomaly videos** (`data/raw/anomaly/` is empty) — anomaly footage is for inference/eval only and not needed to train.
-- **29,597 frames** extracted at 2 fps across 13 videos (`data/frames/{video}/`).
-- Lighting split (needed because baselines are trained per lighting condition):
-  1× day, 4× dusk, 8× night. Currently only one day-launch video exists.
+**CRS-7 (Falcon 9, 2015) — detected.**
 
-## Completed stages (technical details)
+![CRS-7 anomaly score](data/plots/spacex_crs-7_anomaly.png)
 
-### 1. Video list + download
+The error curve is clean and isolated. Aside from a minor precursor bump around 1130 s, the score sits on a low, flat baseline (median ~0.13) throughout ascent, breaks sharply upward at ~1160 s, peaks at **7.74 at 1206 s**, holds near that level for roughly a minute, and decays. That peak is ~16× the 95th percentile of all normal-video error (0.49) and ~60× the video's own quiet baseline — an order of magnitude beyond anything the model produces for normal ascent. Timing closely aligns with the known breakup.
 
-- **`configs/videos.yaml`** — YAML grouped by `normal:` / `anomaly:`; each entry is
-  `{mission, source, video_id}`. `scripts/download.py` expects this exact schema.
-- **`scripts/add_video.py`** — CLI helper for hand-picked URLs (replaces the
-  API-driven approach):
-  ```
-  python scripts/add_video.py <youtube_url> --mission "Name" --source spacex --tag normal
-  ```
-  Extracts the 11-char video ID from any standard YouTube URL (`watch?v=`, `youtu.be/`,
-  `embed/`, `live/`, `shorts/`), rejects non-YouTube URLs and duplicate IDs, appends under
-  the right group in `configs/videos.yaml`, and preserves the file's existing comments by
-  editing text line-by-line rather than round-tripping YAML.
-- **`scripts/fetch_launch_list.py`** — auto-generates `configs/videos_generated.yaml` from
-  the SpaceX v5 API and Launch Library 2 (LL2 2.3.0, provider-side filters for
-  ISRO/NASA); caches raw responses in `data/api_cache/`. Superseded by `add_video.py` for
-  day-to-day use but kept.
-- **`scripts/download.py`** — reads `configs/videos.yaml`, downloads each video at ≤1080p
-  into `data/raw/{label}/{source}_{mission}.mp4`, skips existing files, merges streams with
-  ffmpeg when available, prints a summary table.
+**Challenger (STS-51L, 1986) — detected, but noisier.**
 
-### 2. Frame extraction (`scripts/extract_frames.py`)
+![Challenger anomaly score](data/plots/nasa_sts-51l_anomaly.png)
 
-Per video:
-1. **Shot detection** with PySceneDetect `ContentDetector` (threshold 27.0) over the full
-   video.
-2. **Short-shot discard** — shots < 2 s are dropped (countdown graphics / rapid cuts, not
-   sustained ascent footage).
-3. **Sampling** — frames written at 2 fps inside kept shots (sampling cadence derived from
-   fps, e.g. every 15th frame at 29.97 fps) to `data/frames/{video}/frame_{idx:05d}.jpg`.
-4. **Lighting tag** — mean gray brightness over ~24 frames sampled across the whole video;
-   `< 45` → `night`, `> 100` → `day`, else `dusk`. Stored in the manifest so training can
-   split by lighting condition.
-5. **`manifest.json`** — records per-frame `{index, timestamp, shot_index, file}` plus
-   video metadata, shot list (kept/discarded flags), and the lighting tag.
+The peak error (4.37 at ~148 s into the footage, aligning with the T+73 s breakup) exceeds the largest error observed in any normal video (4.00). But this is a real spike riding on elevated noise rather than a clean isolated rise like CRS-7: the archival footage is lower quality, and ROI tracking fell back to full-frame crops on 105 of 501 frames (21%) where no confident plume blob was found, inflating the baseline. A threshold tuned on clean footage is more likely to produce false triggers here.
 
-Extraction happens in a single decode pass (shot boundaries come from scene detection, then
-one read loop writes frames and gathers brightness). Already-processed videos (valid
-manifest with frames) are skipped; `--force` redoes, `--only <substring>` tests one video.
+**Antares Orb-3 (2014) — missed.**
 
-**Codec handling:** SpaceX webcasts arrive as AV1/VP9, which OpenCV cannot decode. A
-one-time ffmpeg transcode to H.264 (`libx264`, `-crf 23`, `-pix_fmt yuv420p`, no audio) is
-cached in `data/frames/_decoded/` and reused; only the raw path is recorded in the
-manifest. Requires `ffmpeg` on PATH.
+Peak error (0.85) stayed well inside the normal range. The likely reasons: the failure occurred almost immediately after liftoff (~T+15 s), giving the model almost no normal-ascent context to establish a baseline against before the explosion; and a fireball + debris cloud shares enough low-level visual statistics (brightness, color, blob shape) with a normal plume that the current hand-crafted features do not strongly separate them.
 
-### 3. ROI tracking (`scripts/roi_track.py`)
+The pattern across these three is the real result: **the approach flags failures that develop after ascent is established, and is weak on immediate-liftoff failures.** That is a genuine, reportable limitation, not something to obscure.
 
-Detects the rocket + exhaust plume region per frame and crops it with a 20% margin.
+## Dataset
 
-- **Detection** is brightness-primary: Otsu threshold isolates the plume against dark sky;
-  when a scene is uniformly bright (day launches) the threshold is raised to the
-  93rd-percentile of gray so the sun/white sky don't swallow the plume. A temporal motion
-  mask (absdiff from the previous frame) *boosts* the blob score rather than gating on it —
-  frames are sampled 0.5 s apart and camera pan dominates the raw diff.
-- **Temporal smoothing** — an EMA over the box (α = 0.4) keeps the crop from jittering
-  frame to frame.
-- **Fallback** — frames with no confident blob (area fraction < 0.005 of the frame) get a
-  full-frame crop; those frames are logged and recorded in
-  `roi_boxes.json["fallback_frames"]` for spot-checking (4.8% of frames overall, higher on
-  night launches where the plume is tiny).
-- **Outputs** — `data/frames/{video}/roi/frame_*.jpg` crops + `roi_boxes.json` with
-  per-frame `{x, y, w, h}` boxes, confidences, fallback list, config, and the lighting tag
-  pulled from the manifest.
+- 13 normal launches: SpaceX Starlink / SDA Tranche 0 webcasts, Feb–Sep 2023 (`data/raw/normal/`), 29,597 frames at ~2 fps sampling.
+- 3 historical anomaly videos: Challenger (STS-51L), CRS-7, Antares Orb-3 (`data/raw/anomaly/`).
+- All sourced from YouTube via yt-dlp; the video files themselves are not redistributed in the repo (raws are gitignored) — only derived frames, features, and config entries are tracked.
 
-Works as CLI (`python scripts/roi_track.py`) or importable `process_video()` for use from a
-Colab notebook. Skipped on rerun when `roi_boxes.json` exists; `--force` redoes.
+The normal set is mission- and vehicle-skewed: it is almost all Falcon 9 Starlink launches, split across day/dusk/night but not vehicle-diverse (no Falcon Heavy, Atlas, Electron, etc.). In practice the model has learned "Falcon 9 Starlink ascent." The normal set needs to broaden before any generalization claim is defensible.
 
-## Pending stages (technical notes)
+## How to run
 
-### 4. `scripts/features.py` — per-frame feature vector
+- GPU-adjacent stages run as Colab notebooks with Google Drive I/O: `notebooks/02_extract_and_track.ipynb` (frame extraction + ROI tracking) and `notebooks/04_extract_features .ipynb` (feature extraction). Expensive intermediates are cached to disk and reused.
+- Training and inference run locally on CPU (features are cheap): `notebooks/train_temporal_model.ipynb` produces `models/temporal_autoencoder.pt` + `models/scaler.pkl`; `python scripts/score_video.py data/features/<name>.npy` scores one sequence and writes `data/plots/<name>_anomaly.png`; `python scripts/score_and_overlay.py --video data/raw/anomaly/<name>.mp4` renders the annotated overlay to `demo/<name>_annotated.mp4`.
+- Dependencies: `numpy`, `opencv-python`, `torch`, `matplotlib`, `pyyaml`, `scenedetect`, `yt-dlp`; `ffmpeg` on PATH for download merging and AV1/VP9 transcoding.
 
-Classical CV first; CNN embeddings only if classical features prove insufficient. Per-frame
-features on the ROI crop (roughly KB-scale per frame):
+## Limitations & future work
 
-- Plume shape statistics (blob area fraction, aspect ratio, centroid offset from crop
-  center, compactness).
-- Color histogram (HSV) — relevant because plume color varies by lighting condition
-  (orange fire at night vs saturated-white at day).
-- Edge / debris density (Canny or gradient magnitude normalized by crop area).
-- Optical flow magnitude within the crop (frame-to-frame motion intensity).
-
-Follow the same CLI + importable-function pattern, cache to `data/features/{video}/`, and
-use the `manifest.json` lighting tag + `roi_boxes.json` boxes as inputs.
-
-### 5. `notebooks/train_temporal_model.ipynb` — the model
-
-ConvLSTM or temporal autoencoder over cached feature sequences, trained **only on normal
-footage**. Feature vectors are cheap, so training never needs GPU even though extraction
-did. Train separate baselines per lighting condition (day / dusk / night) — hence the
-lighting tag collected in stage 2. Also run as Colab cells with Google Drive I/O (no local
-filesystem assumptions beyond a configurable base path).
-
-### 6. `scripts/score_and_overlay.py` — inference
-
-Runs the trained model over a full video, outputs an anomaly score per frame + a rendered
-overlay video. No failure examples are required to run it.
-
-## Conventions
-
-- Raw PyTorch; no Ultralytics / high-level wrappers.
-- Every GPU-heavy script must also run unchanged as Colab notebook cells with Google Drive
-  I/O (configurable base path, no hardcoded local paths).
-- Cache every expensive intermediate (frames, features) to disk — never recompute from raw
-  video more than once.
-- One function per pipeline stage, testable independently on a single video (`--only`)
-  before running batch.
-- Feature vectors are KB-scale, so the temporal model never needs GPU.
-
-## Requirements
-
-`requirements.txt`: `yt-dlp`, `pyyaml`, `requests`, `scenedetect`, `opencv-python`,
-`numpy`. `ffmpeg` is required on PATH for download merging and AV1/VP9 transcoding.
-
-## Known gaps / next steps
-
-1. Only one day-launch video — the day-lighting baseline is undersampled.
-2. `data/raw/anomaly/` is empty; anomaly footage is needed only for eval, not training.
-3. ROI tracking uses a classical brightness/motion heuristic; verify quality on more
-   footage before building features on top (the `fallback_frames` list is the review tool).
-4. Batch feature extraction and the training notebook are the next pipeline stages to build.
+- **Immediate-liftoff failures (Antares Orb-3).** With no established ascent to compare against, the current features cannot separate a fireball from a plume. Possible fixes: liftoff-phase-normal training data, or features that capture explosion dynamics (expansion rate, debris trajectories) rather than static appearance.
+- **Thin normal-set diversity.** Nearly all Falcon 9 Starlink. The model's notion of "normal" is bounded by what the training set happens to contain.
+- **Hand-crafted features.** Shape/color/edge/flow are classical CV. Learned embeddings (e.g., a CNN encoder over the same ROI crops) are the natural next step if these features prove insufficient for fireball-like anomalies.
+- **Per-video-relative thresholding.** `multiplier × p95` is sensitive to baseline noise (the Challenger case); an absolute threshold fit to the normal population would be more robust.
+- **Offline only.** This scores recorded video; there is no real-time/streaming deployment.

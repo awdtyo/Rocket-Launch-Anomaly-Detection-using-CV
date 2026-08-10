@@ -5,3 +5,4 @@ scenedetect
 opencv-python
 numpy
 matplotlib
+torch

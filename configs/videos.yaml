@@ -53,4 +53,10 @@ normal:
 anomaly:
   - mission: crs-7
     source: spacex
-    video_id: PLACEHOLDER_VIDEO_ID_3
+    video_id: WqN_FrPWH8M
+  - mission: sts-51l
+    source: nasa
+    video_id: eDt2LxoeA_g
+  - mission: orb-3
+    source: nasa
+    video_id: n9ythm-Rjy4

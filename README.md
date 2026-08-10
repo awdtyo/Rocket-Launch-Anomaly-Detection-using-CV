@@ -33,6 +33,8 @@ The peak error (4.37 at ~148 s into the footage, aligning with the T+73 s breaku
 
 **Antares Orb-3 (2014) — missed.**
 
+![Antares Orb-3 anomaly score](data/plots/nasa_orb-3_anomaly.png)
+
 Peak error (0.85, at 30.9 s into the footage) stayed well inside the normal range — measured stats are p95 0.81 / max 0.85, and the auto threshold (3× p95 = 2.42) exceeds the max, so the overlay renders a video that correctly shows no alarm. The likely reasons: the failure occurred almost immediately after liftoff (~T+15 s), giving the model almost no normal-ascent context to establish a baseline against before the explosion; and a fireball + debris cloud shares enough low-level visual statistics (brightness, color, blob shape) with a normal plume that the current hand-crafted features do not strongly separate them.
 
 The pattern across these three is the real result: **the approach flags failures that develop after ascent is established, and is weak on immediate-liftoff failures.** That is a genuine, reportable limitation, not something to obscure.

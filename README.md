@@ -1,3 +1,5 @@
+![Rocket Launch Anomaly Detection banner](assets/banner.png)
+
 # Rocket Launch Anomaly Detection
 
 Unsupervised video anomaly detection for rocket ascent footage. The system is trained only on normal launch webcasts to learn what a typical ascent looks like, then scores unseen footage by how much it deviates from that learned normal. This is a research/portfolio MVP, not a production system: it demonstrably flags at least one known historical failure cleanly, and it has documented blind spots.

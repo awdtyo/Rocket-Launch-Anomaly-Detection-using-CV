@@ -15,6 +15,26 @@ No labeled failure dataset exists at scale, and no two failures look alike. So i
 5. **Temporal model** — `notebooks/train_temporal_model.ipynb` trains a GRU autoencoder (window 16, stride 4, latent 32) on feature sequences from normal launches only, minimizing reconstruction MSE.
 6. **Scoring & overlay** — `scripts/score_video.py` runs the trained model over a feature sequence and outputs a per-frame reconstruction error (mean MSE over all windows covering each frame). `scripts/score_and_overlay.py` renders an annotated video with a live error chart and a banner that triggers when the score crosses `multiplier × video p95` (default 3×). The chart is scaled to fit the frame, so overlays also work on narrow archival footage (e.g. 320×240).
 
+```mermaid
+flowchart LR
+    CFG[configs/videos.yaml] --> DL[scripts/download.py]
+    DL --> RAW[data/raw/ normal + anomaly mp4]
+    RAW --> EF[scripts/extract_frames.py<br/>shot filtering + 2 fps sampling + lighting tag]
+    EF --> FR[data/frames/ frame_*.jpg + manifest.json]
+    FR --> RT[scripts/roi_track.py<br/>plume detection + EMA box smoothing]
+    RT --> ROI[data/frames/…/roi/ crops + roi_boxes.json]
+    ROI --> FX[scripts/features.py]
+    FX --> FEAT[data/features/ 33-dim vectors]
+    FEAT --> TR[notebooks/train_temporal_model.ipynb<br/>GRU autoencoder, normal-only]
+    TR --> MDL[models/ temporal_autoencoder.pt + scaler.pkl]
+    FEAT --> SV[scripts/score_video.py]
+    MDL --> SV
+    SV --> PLT[data/plots/ anomaly-score PNG]
+    FEAT --> SO[scripts/score_and_overlay.py]
+    MDL --> SO
+    SO --> DEMO[demo/ annotated overlay mp4]
+```
+
 ## Results
 
 All three historical anomaly videos were held out of training; the model was trained on the 13 normal launches only.
@@ -43,7 +63,9 @@ The pattern across these three is the real result: **the approach flags failures
 
 - 13 normal launches: SpaceX Starlink / SDA Tranche 0 webcasts, Feb–Sep 2023 (`data/raw/normal/`), 29,597 frames at ~2 fps sampling.
 - 3 historical anomaly videos: Challenger (STS-51L), CRS-7, Antares Orb-3 (`data/raw/anomaly/`).
-- All sourced from YouTube via yt-dlp; the video files themselves are not redistributed in the repo (raws are gitignored) — only derived frames, features, and config entries are tracked.
+- All sourced from YouTube via yt-dlp; the video files themselves are not redistributed in the repo — only cheap derived artifacts are tracked (feature vectors, plots, model checkpoints, configs).
+
+**Why the video files are excluded.** The raw launch webcasts (the 13 training videos and the 3 anomaly test videos) are large — each full-HD, multi-minute webcast is on the order of hundreds of MB to ~1 GB, and the full set would add many gigabytes to the repository. They are also third-party YouTube content (SpaceX/NASA webcasts) that this project does not own and cannot redistribute. The URLs are recorded in `configs/videos.yaml`, so the videos are regenerable with `python scripts/download.py`; the derived frame crops in `data/frames/` are excluded on the same grounds (reproducible from the raws, and bulkier than the KB-scale feature vectors the model actually consumes).
 
 The normal set is mission- and vehicle-skewed: it is almost all Falcon 9 Starlink launches, split across day/dusk/night but not vehicle-diverse (no Falcon Heavy, Atlas, Electron, etc.). In practice the model has learned "Falcon 9 Starlink ascent." The normal set needs to broaden before any generalization claim is defensible.
 

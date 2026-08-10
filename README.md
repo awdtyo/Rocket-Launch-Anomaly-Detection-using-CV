@@ -17,6 +17,7 @@ No labeled failure dataset exists at scale, and no two failures look alike. So i
 5. **Temporal model** — `notebooks/train_temporal_model.ipynb` trains a GRU autoencoder (window 16, stride 4, latent 32) on feature sequences from normal launches only, minimizing reconstruction MSE.
 6. **Scoring & overlay** — `scripts/score_video.py` runs the trained model over a feature sequence and outputs a per-frame reconstruction error (mean MSE over all windows covering each frame). `scripts/score_and_overlay.py` renders an annotated video with a live error chart and a banner that triggers when the score crosses `multiplier × video p95` (default 3×). The chart is scaled to fit the frame, so overlays also work on narrow archival footage (e.g. 320×240).
 
+## Pipeline Workflow 
 ```mermaid
 flowchart TB
     CFG[configs/videos.yaml] --> DL[scripts/download.py]

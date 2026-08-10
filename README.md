@@ -72,6 +72,9 @@ The pattern across these three is the real result: **the approach flags failures
 
 The normal set is mission- and vehicle-skewed: it is almost all Falcon 9 Starlink launches, split across day/dusk/night but not vehicle-diverse (no Falcon Heavy, Atlas, Electron, etc.). In practice the model has learned "Falcon 9 Starlink ascent." The normal set needs to broaden before any generalization claim is defensible.
 
+**Training Data**: https://drive.google.com/drive/folders/1fWIQBRbbb9T55q63yG3rcdHFIjIAvgC4?usp=sharing
+**Testing Data**: https://drive.google.com/drive/folders/18KlwFll4ZFkUgmasaDZdbqoJvvos5poj?usp=sharing
+
 ## How to run
 
 - GPU-adjacent stages run as Colab notebooks with Google Drive I/O: `notebooks/02_extract_and_track.ipynb` (frame extraction + ROI tracking) and `notebooks/04_extract_features .ipynb` (feature extraction). Expensive intermediates are cached to disk and reused.

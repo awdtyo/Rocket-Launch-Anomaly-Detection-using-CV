@@ -1,4 +1,4 @@
-![Rocket Launch Anomaly Detection banner](assets/banner.png)
+![Rocket Launch Anomaly Detection banner](assets/banner.png) 
   
 # Rocket Launch Anomaly Detection
 

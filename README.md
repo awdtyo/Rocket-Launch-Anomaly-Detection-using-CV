@@ -4,7 +4,7 @@
 
 Unsupervised video anomaly detection for rocket ascent footage. The system is trained only on normal launch webcasts to learn what a typical ascent looks like, then scores unseen footage by how much it deviates from that learned normal. This is a research/portfolio MVP, not a production system: it demonstrably flags at least one known historical failure cleanly, and it has documented blind spots.
 
-## Overview
+## Overview 
 
 No labeled failure dataset exists at scale, and no two failures look alike. So instead of training a classifier to recognize anomaly types, a temporal autoencoder is trained only on *normal* ascent footage: it learns the recurring structure of plume shape, color, debris pattern, and vehicle silhouette. At inference, a frame whose reconstruction error is far above what the model produces for normal video is flagged as anomalous. The model is never shown a failure during training, and nothing in the design assumes balanced classes or failure examples.
 
